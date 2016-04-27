@@ -18,8 +18,12 @@
 x64/
 x86/
 bld/
-[Bb]in/
+![Bb]in/
 [Oo]bj/
+
+#Bat files that define tests
+!Start Server - Starter.bat
+!Start Server - HD.bat
 
 # Visual Studio 2015 cache/options directory
 .vs/
