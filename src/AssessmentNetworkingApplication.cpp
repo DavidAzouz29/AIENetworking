@@ -126,51 +126,67 @@ bool AssessmentNetworkingApplication::update(float deltaTime)
 			unsigned int size = 0;
 			stream.Read(size);
 
+			bool isFirstRun = false;
 			// if first time receiving entities...
 			if (m_aiEntities.size() == 0) 
 			{
 				// ... resize our vector
 				m_aiEntities.resize(size / sizeof(AIEntity));
+				isFirstRun = true;
 			}
 			// ... the second time, set the current entites to the previous.
 			else
 			{
-				m_aiPrevEntities = m_aiEntities;
+				m_aiPrevEntities = m_aiEntities; // TODO: m_aiPrevEntities is 0?
 			}
 
 			// Setting current entites.
 			stream.Read((char*)m_aiEntities.data(), size);
 
 			// our range //USHORT?
-			short sRange = 2;
-		
-			// To account for packet loss/ stuttering
-			for (auto& ai : m_aiEntities)
+			//short sRange = 0.1f;
+			float sRange = 25.0f;
+
+			// if it's the first time running, assign prev to current
+			if (isFirstRun)
 			{
-				for (auto& pAI : m_aiPrevEntities)
+				m_aiPrevEntities = m_aiEntities;
+				continue;
+			}
+			/// <summary>
+			/// To account for packet loss/ stuttering
+			/// Check for lost packets.
+			/// </summary>
+			//for (auto& ai : m_aiEntities)
+			for (int i = 0; i < m_aiEntities.size(); ++i)
+			{
+				AIEntity& ai = m_aiEntities[i];
+				AIEntity& pAI = m_aiPrevEntities[i];
+				// if our past position with our current velocity is more than our allocated distance...
+				glm::vec2 v2ExpectedPos(pAI.position.x + pAI.velocity.x * deltaTime, pAI.position.y + pAI.velocity.y * deltaTime);
+				glm::vec2 v2CurrentPos(ai.position.x, ai.position.y);
+				// if our difference is outside our range
+				if (glm::distance(v2ExpectedPos, v2CurrentPos) > sRange && !ai.teleported)
 				{
-					// if our past position with our current velocity is more than our allocated distance...
-					float fExpectedPosX = pAI.position.x + pAI.velocity.x * deltaTime;
-					float fExpectedPosY = pAI.position.y + pAI.velocity.y * deltaTime;
-					// if our difference is outside our range
-					if (fExpectedPosX - ai.position.x > sRange && fExpectedPosX - ai.position.x < -sRange || 
-						fExpectedPosY - ai.position.y > sRange && fExpectedPosY - ai.position.y < -sRange)
-					{
-						//... set our current pos to our expected pos
-						ai.position.x = fExpectedPosX;
-						ai.position.y = fExpectedPosY;
-					}
+					//... set our current pos to our expected pos
+					//ai.position.x = fExpectedPosX;
+					//ai.position.y = fExpectedPosY;
+					std::cout << "Entity " << ai.id << " moved." << std::endl;
+
 					/// <summary>
 					/// TODO: lerp from our previous position to our current position over time.
 					/// <example> Lerp = fma(t, v1, fma(-t, v0, v0)) </example> 
 					/// </summary>
 					//fmaf(glfwGetTime(), ai.position.x, fmaf(-glfwGetTime(), pAI.position.x, pAI.position.x));
 					//fmaf(glfwGetTime(), ai.position.y, fmaf(-glfwGetTime(), pAI.position.y, pAI.position.y));
-					glm::mix(pAI.position.x, ai.position.x, glfwGetTime()); //TODO: deltaTime?
-					glm::mix(pAI.position.y, ai.position.y, glfwGetTime());
-
 					
+					//glm::mix(pAI.position.x, ai.position.x, deltaTime); //glfwGetTime()); //TODO: deltaTime?
+					//glm::mix(pAI.position.y, ai.position.y, deltaTime); //glfwGetTime());
 				}
+
+
+				// TODO: Do predictive movement even without packets.
+
 			}
 
 			break;

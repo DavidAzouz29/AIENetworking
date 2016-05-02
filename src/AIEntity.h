@@ -38,7 +38,7 @@ struct AIVector
 struct AIEntity 
 {
 	unsigned int id;
-	unsigned int uiTick; //TODO: add a sequence? or timestamp
+	//unsigned int uiSequence; //TODO: add a sequence? or timestamp. Defines the order in which entites data should be read.
 	AIVector position;
 	AIVector velocity;
 	bool teleported;
