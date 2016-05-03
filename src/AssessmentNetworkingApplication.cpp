@@ -6,6 +6,7 @@
 /// https://devblogs.nvidia.com/parallelforall/lerp-faster-cuda/
 /// http://glm.g-truc.net/0.9.4/api/a00129.html#ga3f64b3986efe205cf30300700667e761
 /// http://www.cplusplus.com/reference/cmath/fma/
+/// https://en.wikipedia.org/wiki/Dead_reckoning
 /// </summary>
 
 #include "AssessmentNetworkingApplication.h"
@@ -100,9 +101,10 @@ bool AssessmentNetworkingApplication::update(float deltaTime)
 	RakNet::Packet* packet;
 	for (packet = m_peerInterface->Receive(); packet;
 		m_peerInterface->DeallocatePacket(packet),
-		packet = m_peerInterface->Receive()) {
-
-		switch (packet->data[0]) {
+		packet = m_peerInterface->Receive()) 
+	{
+		switch (packet->data[0])
+		{
 		case ID_CONNECTION_REQUEST_ACCEPTED:
 			std::cout << "Our connection request has been accepted." << std::endl;
 			break;
@@ -118,8 +120,8 @@ bool AssessmentNetworkingApplication::update(float deltaTime)
 		case ID_CONNECTION_LOST:
 			std::cout << "Connection lost." << std::endl;
 			break;
-		case ID_ENTITY_LIST: {
-
+		case ID_ENTITY_LIST:
+		{
 			// receive list of entities
 			RakNet::BitStream stream(packet->data, packet->length, false);
 			stream.IgnoreBytes(sizeof(RakNet::MessageID));
@@ -128,7 +130,7 @@ bool AssessmentNetworkingApplication::update(float deltaTime)
 
 			bool isFirstRun = false;
 			// if first time receiving entities...
-			if (m_aiEntities.size() == 0) 
+			if (m_aiEntities.size() == 0)
 			{
 				// ... resize our vector
 				m_aiEntities.resize(size / sizeof(AIEntity));
@@ -145,28 +147,39 @@ bool AssessmentNetworkingApplication::update(float deltaTime)
 
 			// our range //USHORT?
 			//short sRange = 0.1f;
-			float sRange = 25.0f;
+			float fRange = 25.0f;
 
-			// if it's the first time running, assign prev to current
+			// if it's the first time running, assign our current entites data to our previous.
 			if (isFirstRun)
 			{
 				m_aiPrevEntities = m_aiEntities;
 				continue;
 			}
+
+			/// --------------------------------------
 			/// <summary>
 			/// To account for packet loss/ stuttering
 			/// Check for lost packets.
-			/// </summary>
-			//for (auto& ai : m_aiEntities)
+			/// </summary> for (auto& ai : m_aiEntities)
+			/// --------------------------------------
 			for (int i = 0; i < m_aiEntities.size(); ++i)
 			{
 				AIEntity& ai = m_aiEntities[i];
 				AIEntity& pAI = m_aiPrevEntities[i];
 				// if our past position with our current velocity is more than our allocated distance...
 				glm::vec2 v2ExpectedPos(pAI.position.x + pAI.velocity.x * deltaTime, pAI.position.y + pAI.velocity.y * deltaTime);
+				// Position data
+				glm::vec2 v2PreviousPos(pAI.position.x, pAI.position.y);
 				glm::vec2 v2CurrentPos(ai.position.x, ai.position.y);
-				// if our difference is outside our range
-				if (glm::distance(v2ExpectedPos, v2CurrentPos) > sRange && !ai.teleported)
+				// Velocity data
+				glm::vec2 v2PreviousVel(pAI.velocity.x, pAI.velocity.y);
+				glm::vec2 v2CurrentVel(ai.velocity.x, ai.velocity.y);
+
+				glm::vec2 v2Heading(v2ExpectedPos - v2CurrentPos);
+				float fDot = glm::dot(v2Heading, v2CurrentPos);
+
+				// if our distance from our expected position is outside our range, and we haven't teleported
+				if (glm::distance(v2ExpectedPos, v2CurrentPos) > fRange && !ai.teleported) // && pAI.position.x < v2CurrentPos.x)
 				{
 					//... set our current pos to our expected pos
 					//ai.position.x = fExpectedPosX;
@@ -175,18 +188,25 @@ bool AssessmentNetworkingApplication::update(float deltaTime)
 
 					/// <summary>
 					/// TODO: lerp from our previous position to our current position over time.
+					/// adjusts position and velocity to our current data.
 					/// <example> Lerp = fma(t, v1, fma(-t, v0, v0)) </example> 
-					/// </summary>
+					/// </summary> //old//glm::mix(v2CurrentPos, v2ExpectedPos, deltaTime); //glfwGetTime());
+					glm::mix(v2PreviousPos, v2CurrentPos, deltaTime); //glfwGetTime());
+					glm::mix(v2PreviousVel, v2CurrentVel, deltaTime); // TODO: needed?
+
+					//glm::mix(v2CurrentVel, v2ExpectedPos, deltaTime); //glfwGetTime());
+
 					//fmaf(glfwGetTime(), ai.position.x, fmaf(-glfwGetTime(), pAI.position.x, pAI.position.x));
 					//fmaf(glfwGetTime(), ai.position.y, fmaf(-glfwGetTime(), pAI.position.y, pAI.position.y));
-					
 					//glm::mix(pAI.position.x, ai.position.x, deltaTime); //glfwGetTime()); //TODO: deltaTime?
 					//glm::mix(pAI.position.y, ai.position.y, deltaTime); //glfwGetTime());
 				}
-
-
-				// TODO: Do predictive movement even without packets.
-
+				else if (v2ExpectedPos.x < v2Heading.x && v2ExpectedPos.y < v2Heading.y)
+				{
+					glm::mix(v2PreviousVel, v2CurrentVel, deltaTime); // TODO: needed?
+				}
+				// TODO: if packet is null
+				// continue at current velocity
 			}
 
 			break;
@@ -197,10 +217,23 @@ bool AssessmentNetworkingApplication::update(float deltaTime)
 		}
 	}
 
+	// TODO:
+	// Predictive movement: predict movement without receiving packets.
+	for (int i = 0; i < m_aiEntities.size(); ++i)
+	{
+		AIEntity& ai = m_aiEntities[i];
+		AIEntity& pAI = m_aiPrevEntities[i];
+		glm::vec2 v2ExpectedPos(pAI.position.x + pAI.velocity.x * deltaTime, pAI.position.y + pAI.velocity.y * deltaTime);
+		glm::vec2 v2CurrentPos(ai.position.x, ai.position.y);
+
+		v2CurrentPos = v2ExpectedPos;
+	}
+
 	Gizmos::clear();
 
 	// add a grid
-	for (int i = 0; i < 21; ++i) {
+	for (int i = 0; i < 21; ++i)
+	{
 		Gizmos::addLine(vec3(-10 + i, 0, 10), vec3(-10 + i, 0, -10),
 						i == 10 ? vec4(1, 1, 1, 1) : vec4(0, 0, 0, 1));
 
@@ -217,7 +250,8 @@ void AssessmentNetworkingApplication::draw()
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	// draw entities
-	for (auto& ai : m_aiEntities) {
+	for (auto& ai : m_aiEntities) 
+	{
 		vec3 p1 = vec3(ai.position.x + ai.velocity.x * 0.25f, 0, ai.position.y + ai.velocity.y * 0.25f);
 		vec3 p2 = vec3(ai.position.x, 0, ai.position.y) - glm::cross(vec3(ai.velocity.x, 0, ai.velocity.y), vec3(0, 1, 0)) * 0.1f;
 		vec3 p3 = vec3(ai.position.x, 0, ai.position.y) + glm::cross(vec3(ai.velocity.x, 0, ai.velocity.y), vec3(0, 1, 0)) * 0.1f;
