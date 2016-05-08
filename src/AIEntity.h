@@ -34,15 +34,19 @@ struct AIVector
 	}
 };
 
+//TODO: pragma needed?
 // basic AI entity data that is broadcast by the server
-struct AIEntity 
+//#pragma pack(push, 1)
+struct AIEntity
 {
-	unsigned int id;
 	//unsigned int uiSequence; //TODO: add a sequence? or timestamp. Defines the order in which entites data should be read.
+	unsigned char typeId; 
+	unsigned int id;
 	AIVector position;
 	AIVector velocity;
 	bool teleported;
 };
+//#pragma pack(pop)
 
 // server's entity data that it uses to update entities
 struct AIServerEntity 

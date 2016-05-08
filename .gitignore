@@ -21,6 +21,8 @@ bld/
 ![Bb]in/
 [Oo]bj/
 
+dep/Raknet/lib/raknet_d.lib
+
 #Bat files that define tests
 !Start Server - Starter.bat
 !Start Server - HD.bat

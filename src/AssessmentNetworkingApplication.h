@@ -8,6 +8,8 @@ class Camera;
 
 namespace RakNet {
 	class RakPeerInterface;
+	//class MessageID; //TODO: 
+	//class Time;
 }
 
 class AssessmentNetworkingApplication : public BaseApplication {
@@ -17,11 +19,11 @@ public:
 	virtual ~AssessmentNetworkingApplication();
 
 	virtual bool startup();
-	virtual void shutdown();
+	virtual GLvoid shutdown();
 
-	virtual bool update(float deltaTime);
+	virtual bool update(GLfloat deltaTime);
 
-	virtual void draw();
+	virtual GLvoid draw();
 
 private:
 
@@ -31,4 +33,11 @@ private:
 
 	std::vector<AIEntity>		m_aiEntities;
 	std::vector<AIEntity>		m_aiPrevEntities; // way to store our entities from the previous frame.
+
+	uint64_t m_uiPrevTimeStamp;
+	// Used for timestamping
+//	RakNet::MessageID useTimeStamp; // Assign this to ID_TIMESTAMP
+//	RakNet::Time timeStamp; // Put the system time in here returned by RakNet::GetTime()
+// useTimeStamp = ID_TIMESTAMP; // MessageIdentifiers.h line: 139
+// timeStamp = RakNet::GetTime();
 };

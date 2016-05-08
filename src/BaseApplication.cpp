@@ -1,5 +1,5 @@
 #include "BaseApplication.h"
-#include "gl_core_4_4.h"
+//#include "gl_core_4_4.h"
 #include <iostream>
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
@@ -37,13 +37,13 @@ bool BaseApplication::createWindow(const char* title, int width, int height) {
 	return true;
 }
 
-void BaseApplication::destroyWindow() {
+GLvoid BaseApplication::destroyWindow() {
 
 	glfwDestroyWindow(m_window);
 	glfwTerminate();
 }
 
-void BaseApplication::run() {
+GLvoid BaseApplication::run() {
 
 	double prevTime = glfwGetTime();
 	double currTime = 0;

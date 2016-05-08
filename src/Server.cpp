@@ -1,6 +1,9 @@
+// Reference Raknet Timestamp: http://www.jenkinssoftware.com/raknet/manual/creatingpackets.html
+
 #include "Server.h"
 #include <RakNetTypes.h>
 #include <Windows.h>
+#include <GetTime.h>
 #include <chrono>
 
 Server::Server(unsigned int entityCount, float arenaRadius, float packetlossPercentage, float delayPercentage, float delayRange)
@@ -99,8 +102,15 @@ void Server::run() {
 	}
 }
 
-// TODO: able to add more data like the timestamp not remove contentS
-void Server::broadcastFaultyData(const char* data, unsigned int size) {
+// TODO: able to add more data like the timestamp not remove contents
+// Stop setting/ sending ID_TIMESTAMP every packet?
+void Server::broadcastFaultyData(const char* data, unsigned int size) 
+{
+	// Used for timestamping
+	RakNet::MessageID useTimeStamp; // Assign this to ID_TIMESTAMP
+	RakNet::Time timeStamp; // Put the system time in here returned by RakNet::GetTime()
+	useTimeStamp = ID_TIMESTAMP; // MessageIdentifiers.h line: 139
+	timeStamp = RakNet::GetTime();
 
 	// lose messages every so often
 	if (randf() * 100 < m_packetlossPercentage)
@@ -109,7 +119,9 @@ void Server::broadcastFaultyData(const char* data, unsigned int size) {
 	// delay messages every so often
 	if (randf() * 100 < m_delayPercentage) {
 		DelayedBroadcast* b = new DelayedBroadcast;
+		b->stream.Write((RakNet::MessageID)useTimeStamp);
 		b->stream.Write((RakNet::MessageID)GameMessages::ID_ENTITY_LIST);
+		b->stream.Write(timeStamp); //TODO: switch with ^above?
 		b->stream.Write(size);
 		b->stream.Write(data, size);
 		float delay = randf() * m_delayRange;
@@ -119,6 +131,8 @@ void Server::broadcastFaultyData(const char* data, unsigned int size) {
 	else {
 		// just send the stream
 		RakNet::BitStream stream;
+		stream.Write((RakNet::MessageID)useTimeStamp);
+		stream.Write(timeStamp);
 		stream.Write((RakNet::MessageID)GameMessages::ID_ENTITY_LIST);
 		stream.Write(size);
 		stream.Write(data, size);

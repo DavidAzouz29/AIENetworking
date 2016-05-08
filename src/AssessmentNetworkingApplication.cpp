@@ -1,13 +1,21 @@
 /// <summary>
 /// Author: David Azouz
 /// Date modified: 26/04/16
+/// ------------------------------------------------------------------
 /// viewed: http://gafferongames.com/networking-for-game-programmers/
 /// https://en.wikipedia.org/wiki/Low-pass_filter
 /// https://devblogs.nvidia.com/parallelforall/lerp-faster-cuda/
 /// http://glm.g-truc.net/0.9.4/api/a00129.html#ga3f64b3986efe205cf30300700667e761
 /// http://www.cplusplus.com/reference/cmath/fma/
 /// https://en.wikipedia.org/wiki/Dead_reckoning
+/// AIE only - Networking P3 Dead Reckoning 
+/// http://aieportal.aie.edu.au/pluginfile.php/51756/mod_resource/content/0/Exercise%20-%20Networking%20Part%203.pdf
+/// http://www.jenkinssoftware.com/raknet/manual/timestamping.html
+/// ------------------------------------------------------------------
+/// ***Edit***
+/// Timestamping - David Azouz 8/05/2016
 /// </summary>
+/// ------------------------------------------------------------------
 
 #include "AssessmentNetworkingApplication.h"
 #include <GLFW/glfw3.h>
@@ -18,6 +26,7 @@
 #include <RakPeerInterface.h>
 #include <MessageIdentifiers.h>
 #include <BitStream.h>
+//#include <GetTime.h> //TODO: 
 
 #include "Gizmos.h"
 #include "Camera.h"
@@ -42,7 +51,7 @@ bool AssessmentNetworkingApplication::startup()
 	Gizmos::create();
 
 	// set up basic camera
-	m_camera = new Camera(glm::pi<float>() * 0.25f, 16 / 9.f, 0.1f, 1000.f);
+	m_camera = new Camera(glm::pi<GLfloat>() * 0.25f, 16 / 9.f, 0.1f, 1000.f);
 	m_camera->setLookAtFrom(vec3(10, 10, 10), vec3(0));
 
 	// start client connection
@@ -54,14 +63,16 @@ bool AssessmentNetworkingApplication::startup()
 	// request access to server
 	std::string ipAddress = "";
 	std::cout << "Press 1 to connect to the local host \nOr 2 to input your own: ";
-	int isIPAddress = -1;
+	GLint isIPAddress = -1;
 	std::cin >> isIPAddress;
-	// if the user inputs '1' then input the IP address below
+	// if the user inputs '1'… 
 	if (isIPAddress == 1)
 	{
+		// …connect to the local host, else…
 		ipAddress = "localhost";
 		std::cout << "Connecting to server at: " << ipAddress << "\n";
 	}
+	// ... allow the user to input their own IP address to connect to
 	else
 	{
 		std::cout << "Connecting to server at: ";
@@ -69,7 +80,11 @@ bool AssessmentNetworkingApplication::startup()
 	}
 	RakNet::ConnectionAttemptResult res = m_peerInterface->Connect(ipAddress.c_str(), SERVER_PORT, nullptr, 0);
 
-	if (res != RakNet::CONNECTION_ATTEMPT_STARTED) {
+	// Timestamping 
+	m_uiPrevTimeStamp = 0;
+
+	if (res != RakNet::CONNECTION_ATTEMPT_STARTED) 
+	{
 		std::cout << "Unable to start connection, Error number: " << res << std::endl;
 		return false;
 	}
@@ -77,7 +92,7 @@ bool AssessmentNetworkingApplication::startup()
 	return true;
 }
 
-void AssessmentNetworkingApplication::shutdown() 
+GLvoid AssessmentNetworkingApplication::shutdown() 
 {
 	// delete our camera and cleanup gizmos
 	delete m_camera;
@@ -87,12 +102,34 @@ void AssessmentNetworkingApplication::shutdown()
 	destroyWindow();
 }
 
-bool AssessmentNetworkingApplication::update(float deltaTime) 
+/// --------------------------------------
+/// <summary>
+/// Timestamping: Check the packets against the timestamp.
+/// <para>http://www.jenkinssoftware.com/raknet/manual/receivingpackets.html </para>
+/// </summary> //unsigned char GLubyte
+unsigned char GetPacketIdentifier(RakNet::Packet *p)
+{
+	if ((unsigned char)p->data[0] == ID_TIMESTAMP)
+	{
+		//return (unsigned char)p->data[sizeof(unsigned char) + sizeof(unsigned long)];
+		// Read from past the message data and timestamp TODO: correct method or should we read the timestamp?
+		// Return the message: ID_ENTITY_LIST
+		return (unsigned char)p->data[sizeof(RakNet::MessageID)]; //RakNet::Time // + sizeof(uint64_t)
+	}
+	else
+	{
+		return (unsigned char)p->data[0];
+	}
+}
+
+bool AssessmentNetworkingApplication::update(GLfloat deltaTime)
 {
 	// close the application if the window closes
 	if (glfwWindowShouldClose(m_window) ||
 		glfwGetKey(m_window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+	{
 		return false;
+	}
 
 	// update camera
 	m_camera->update(deltaTime);
@@ -103,7 +140,8 @@ bool AssessmentNetworkingApplication::update(float deltaTime)
 		m_peerInterface->DeallocatePacket(packet),
 		packet = m_peerInterface->Receive()) 
 	{
-		switch (packet->data[0])
+		unsigned char abc = GetPacketIdentifier(packet);
+		switch (abc) //->data[0]) //TODO: remove
 		{
 		case ID_CONNECTION_REQUEST_ACCEPTED:
 			std::cout << "Our connection request has been accepted." << std::endl;
@@ -124,49 +162,59 @@ bool AssessmentNetworkingApplication::update(float deltaTime)
 		{
 			// receive list of entities
 			RakNet::BitStream stream(packet->data, packet->length, false);
-			stream.IgnoreBytes(sizeof(RakNet::MessageID));
-			unsigned int size = 0;
+			stream.IgnoreBytes(sizeof(RakNet::MessageID)); // Ignore the ID_TIMESTAMP message.
+			//GLubyte useTimeStamp = 0; // TODO: UCHAR?
+			uint64_t timeStamp = 0; // sizeof(useTimeStamp); // <- use this if useTimeStamp is needed
+			GLuint size = sizeof(stream.Read(timeStamp));// +sizeof(RakNet::MessageID)); //some reason must be seperate?
+			//stream.Read(useTimeStamp);
 			stream.Read(size);
 
-			bool isFirstRun = false;
+			//bool isSecondRun = false;
+
 			// if first time receiving entities...
 			if (m_aiEntities.size() == 0)
 			{
-				// ... resize our vector
+				// ... resize our vector, otherwise...
 				m_aiEntities.resize(size / sizeof(AIEntity));
-				isFirstRun = true;
+				//isSecondRun = true;
 			}
-			// ... the second time, set the current entites to the previous.
+			// ... the second time through, 
 			else
 			{
-				m_aiPrevEntities = m_aiEntities; // TODO: m_aiPrevEntities is 0?
+				// set the current entites to the previous,
+				m_aiPrevEntities = m_aiEntities;
+				// and the current time stamp to the previous.
+				m_uiPrevTimeStamp = timeStamp;
 			}
 
 			// Setting current entites.
+			stream.Read(timeStamp);
 			stream.Read((char*)m_aiEntities.data(), size);
 
-			// our range //USHORT?
-			//short sRange = 0.1f;
-			float fRange = 25.0f;
+			// Will help determine if a packet is lost if data is out of our defined range.
+			GLfloat fRange = 25.0f;
 
-			// if it's the first time running, assign our current entites data to our previous.
-			if (isFirstRun)
+			// if it's the second time running, assign our current entites data to our previous.
+			/*if (isSecondRun)
 			{
 				m_aiPrevEntities = m_aiEntities;
 				continue;
-			}
+			}*/
 
 			/// --------------------------------------
 			/// <summary>
-			/// To account for packet loss/ stuttering
-			/// Check for lost packets.
+			/// To account for packet loss/ stuttering.
+			/// Check for lost packets by identifying whether data has exceeded our range.
+			/// If so, adjusts the entites position.
 			/// </summary> for (auto& ai : m_aiEntities)
 			/// --------------------------------------
-			for (int i = 0; i < m_aiEntities.size(); ++i)
+			for (GLuint i = 0; i < m_aiEntities.size(); ++i)
 			{
+				// Our current data
 				AIEntity& ai = m_aiEntities[i];
 				AIEntity& pAI = m_aiPrevEntities[i];
 				// if our past position with our current velocity is more than our allocated distance...
+				//glm::vec2 v2ExpectedPos(pAI.position.x + ai.velocity.x * deltaTime, pAI.position.y + ai.velocity.y * deltaTime);
 				glm::vec2 v2ExpectedPos(pAI.position.x + pAI.velocity.x * deltaTime, pAI.position.y + pAI.velocity.y * deltaTime);
 				// Position data
 				glm::vec2 v2PreviousPos(pAI.position.x, pAI.position.y);
@@ -176,10 +224,13 @@ bool AssessmentNetworkingApplication::update(float deltaTime)
 				glm::vec2 v2CurrentVel(ai.velocity.x, ai.velocity.y);
 
 				glm::vec2 v2Heading(v2ExpectedPos - v2CurrentPos);
-				float fDot = glm::dot(v2Heading, v2CurrentPos);
+				//glm::vec2 v2Heading(abs(v2ExpectedPos - v2CurrentPos));
+				GLfloat fDot = glm::dot(v2Heading, v2CurrentPos);
 
-				// if our distance from our expected position is outside our range, and we haven't teleported
-				if (glm::distance(v2ExpectedPos, v2CurrentPos) > fRange && !ai.teleported) // && pAI.position.x < v2CurrentPos.x)
+				// if our current timestamp is before our previous time stamp, or
+				// our distance from our expected position is outside our range, and we haven't teleported
+				if (timeStamp < m_uiPrevTimeStamp ||
+					glm::distance(v2ExpectedPos, v2CurrentPos) > fRange && !ai.teleported) // && pAI.position.x < v2CurrentPos.x)
 				{
 					//... set our current pos to our expected pos
 					//ai.position.x = fExpectedPosX;
@@ -194,13 +245,13 @@ bool AssessmentNetworkingApplication::update(float deltaTime)
 					glm::mix(v2PreviousPos, v2CurrentPos, deltaTime); //glfwGetTime());
 					glm::mix(v2PreviousVel, v2CurrentVel, deltaTime); // TODO: needed?
 
-					//glm::mix(v2CurrentVel, v2ExpectedPos, deltaTime); //glfwGetTime());
-
+					/*glm::mix(v2CurrentVel, v2ExpectedPos, deltaTime); //glfwGetTime());
 					//fmaf(glfwGetTime(), ai.position.x, fmaf(-glfwGetTime(), pAI.position.x, pAI.position.x));
 					//fmaf(glfwGetTime(), ai.position.y, fmaf(-glfwGetTime(), pAI.position.y, pAI.position.y));
 					//glm::mix(pAI.position.x, ai.position.x, deltaTime); //glfwGetTime()); //TODO: deltaTime?
-					//glm::mix(pAI.position.y, ai.position.y, deltaTime); //glfwGetTime());
+					//glm::mix(pAI.position.y, ai.position.y, deltaTime); //glfwGetTime()); */
 				}
+				// ... if new packet data is behind us
 				else if (v2ExpectedPos.x < v2Heading.x && v2ExpectedPos.y < v2Heading.y)
 				{
 					glm::mix(v2PreviousVel, v2CurrentVel, deltaTime); // TODO: needed?
@@ -219,10 +270,12 @@ bool AssessmentNetworkingApplication::update(float deltaTime)
 
 	// TODO:
 	// Predictive movement: predict movement without receiving packets.
-	for (int i = 0; i < m_aiEntities.size(); ++i)
+	// Dead Reckoning: adjusts the entites positions
+	for (GLuint i = 0; i < m_aiEntities.size(); ++i)
 	{
 		AIEntity& ai = m_aiEntities[i];
 		AIEntity& pAI = m_aiPrevEntities[i];
+		//glm::vec2 v2ExpectedPos(pAI.position.x + ai.velocity.x * deltaTime, pAI.position.y + ai.velocity.y * deltaTime);
 		glm::vec2 v2ExpectedPos(pAI.position.x + pAI.velocity.x * deltaTime, pAI.position.y + pAI.velocity.y * deltaTime);
 		glm::vec2 v2CurrentPos(ai.position.x, ai.position.y);
 
@@ -232,7 +285,7 @@ bool AssessmentNetworkingApplication::update(float deltaTime)
 	Gizmos::clear();
 
 	// add a grid
-	for (int i = 0; i < 21; ++i)
+	for (GLint i = 0; i < 21; ++i)
 	{
 		Gizmos::addLine(vec3(-10 + i, 0, 10), vec3(-10 + i, 0, -10),
 						i == 10 ? vec4(1, 1, 1, 1) : vec4(0, 0, 0, 1));
@@ -244,7 +297,7 @@ bool AssessmentNetworkingApplication::update(float deltaTime)
 	return true;
 }
 
-void AssessmentNetworkingApplication::draw() 
+GLvoid AssessmentNetworkingApplication::draw()
 {
 	// clear the screen for this frame
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -268,8 +321,8 @@ void AssessmentNetworkingApplication::draw()
 	// display the 3D gizmos
 	Gizmos::draw(m_camera->getProjectionView());
 }
-
+/*
 float lerp(float v0, float v1, float t) 
 {
 	return (1 - t)*v0 + t*v1;
-}
+} //*/
