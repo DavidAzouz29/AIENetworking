@@ -39,8 +39,6 @@ struct AIVector
 //#pragma pack(push, 1)
 struct AIEntity
 {
-	//unsigned int uiSequence; //TODO: add a sequence? or timestamp. Defines the order in which entites data should be read.
-	unsigned char typeId; 
 	unsigned int id;
 	AIVector position;
 	AIVector velocity;

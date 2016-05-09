@@ -1,19 +1,22 @@
 /// <summary>
 /// Author: David Azouz
-/// Date modified: 26/04/16
+/// Date modified: 9/05/16
 /// ------------------------------------------------------------------
 /// viewed: http://gafferongames.com/networking-for-game-programmers/
 /// https://en.wikipedia.org/wiki/Low-pass_filter
-/// https://devblogs.nvidia.com/parallelforall/lerp-faster-cuda/
 /// http://glm.g-truc.net/0.9.4/api/a00129.html#ga3f64b3986efe205cf30300700667e761
-/// http://www.cplusplus.com/reference/cmath/fma/
 /// https://en.wikipedia.org/wiki/Dead_reckoning
 /// AIE only - Networking P3 Dead Reckoning 
 /// http://aieportal.aie.edu.au/pluginfile.php/51756/mod_resource/content/0/Exercise%20-%20Networking%20Part%203.pdf
 /// http://www.jenkinssoftware.com/raknet/manual/timestamping.html
 /// ------------------------------------------------------------------
 /// ***Edit***
+/// Distance checking - David Azouz 2/05/2016
 /// Timestamping - David Azouz 8/05/2016
+/// Predictive Movement - David Azouz 9/05/2016
+/// 
+/// if packet is null
+/// continue at current velocity
 /// </summary>
 /// ------------------------------------------------------------------
 
@@ -26,7 +29,6 @@
 #include <RakPeerInterface.h>
 #include <MessageIdentifiers.h>
 #include <BitStream.h>
-//#include <GetTime.h> //TODO: 
 
 #include "Gizmos.h"
 #include "Camera.h"
@@ -82,6 +84,7 @@ bool AssessmentNetworkingApplication::startup()
 
 	// Timestamping 
 	m_uiPrevTimeStamp = 0;
+	m_uiCurrentTimeStamp = 0;
 
 	if (res != RakNet::CONNECTION_ATTEMPT_STARTED) 
 	{
@@ -109,13 +112,14 @@ GLvoid AssessmentNetworkingApplication::shutdown()
 /// </summary> //unsigned char GLubyte
 unsigned char GetPacketIdentifier(RakNet::Packet *p)
 {
+	// if our message is equal to the timestamp ID
 	if ((unsigned char)p->data[0] == ID_TIMESTAMP)
 	{
-		//return (unsigned char)p->data[sizeof(unsigned char) + sizeof(unsigned long)];
-		// Read from past the message data and timestamp TODO: correct method or should we read the timestamp?
-		// Return the message: ID_ENTITY_LIST
-		return (unsigned char)p->data[sizeof(RakNet::MessageID)]; //RakNet::Time // + sizeof(uint64_t)
+		// Read from past the message data
+		// Returns the start of message: ID_ENTITY_LIST
+		return (unsigned char)p->data[sizeof(RakNet::MessageID)];
 	}
+	// else return the message
 	else
 	{
 		return (unsigned char)p->data[0];
@@ -140,8 +144,7 @@ bool AssessmentNetworkingApplication::update(GLfloat deltaTime)
 		m_peerInterface->DeallocatePacket(packet),
 		packet = m_peerInterface->Receive()) 
 	{
-		unsigned char abc = GetPacketIdentifier(packet);
-		switch (abc) //->data[0]) //TODO: remove
+		switch (GetPacketIdentifier(packet))
 		{
 		case ID_CONNECTION_REQUEST_ACCEPTED:
 			std::cout << "Our connection request has been accepted." << std::endl;
@@ -163,101 +166,91 @@ bool AssessmentNetworkingApplication::update(GLfloat deltaTime)
 			// receive list of entities
 			RakNet::BitStream stream(packet->data, packet->length, false);
 			stream.IgnoreBytes(sizeof(RakNet::MessageID)); // Ignore the ID_TIMESTAMP message.
-			//GLubyte useTimeStamp = 0; // TODO: UCHAR?
-			uint64_t timeStamp = 0; // sizeof(useTimeStamp); // <- use this if useTimeStamp is needed
-			GLuint size = sizeof(stream.Read(timeStamp));// +sizeof(RakNet::MessageID)); //some reason must be seperate?
-			//stream.Read(useTimeStamp);
+			stream.IgnoreBytes(sizeof(RakNet::MessageID)); // Ignore the ID_ENTITY_LIST message.
+			stream.Read(m_uiCurrentTimeStamp);
+			unsigned int size = 0;
 			stream.Read(size);
 
-			//bool isSecondRun = false;
+			// used to determine whether it's the first time we are running
+			bool isFirstRun = false;
+			// determines whether a timestamp/ packet is delayed
+			bool isOutOfOrder = false;
 
 			// if first time receiving entities...
 			if (m_aiEntities.size() == 0)
 			{
 				// ... resize our vector, otherwise...
 				m_aiEntities.resize(size / sizeof(AIEntity));
-				//isSecondRun = true;
+				// set our current time stamp to our previous
+				m_uiPrevTimeStamp = m_uiCurrentTimeStamp;
+				isFirstRun = true;
 			}
-			// ... the second time through, 
+			// if it's the second time running, assign our current entites data to our previous.
 			else
 			{
 				// set the current entites to the previous,
 				m_aiPrevEntities = m_aiEntities;
-				// and the current time stamp to the previous.
-				m_uiPrevTimeStamp = timeStamp;
 			}
 
 			// Setting current entites.
-			stream.Read(timeStamp);
 			stream.Read((char*)m_aiEntities.data(), size);
 
 			// Will help determine if a packet is lost if data is out of our defined range.
 			GLfloat fRange = 25.0f;
 
-			// if it's the second time running, assign our current entites data to our previous.
-			/*if (isSecondRun)
+			// Reads on the first run.
+			if (isFirstRun)
 			{
+				// set our current data to our previous to avoid a memory fault
 				m_aiPrevEntities = m_aiEntities;
 				continue;
-			}*/
+			}
 
 			/// --------------------------------------
 			/// <summary>
 			/// To account for packet loss/ stuttering.
-			/// Check for lost packets by identifying whether data has exceeded our range.
+			/// Checks our timestamp sent with the packet, and
+			/// for lost packets by identifying whether data has exceeded our range.
 			/// If so, adjusts the entites position.
-			/// </summary> for (auto& ai : m_aiEntities)
+			/// </summary> 
 			/// --------------------------------------
 			for (GLuint i = 0; i < m_aiEntities.size(); ++i)
 			{
 				// Our current data
 				AIEntity& ai = m_aiEntities[i];
+				// Previous data
 				AIEntity& pAI = m_aiPrevEntities[i];
-				// if our past position with our current velocity is more than our allocated distance...
-				//glm::vec2 v2ExpectedPos(pAI.position.x + ai.velocity.x * deltaTime, pAI.position.y + ai.velocity.y * deltaTime);
+				// Expected position based off previous position and velocity data
 				glm::vec2 v2ExpectedPos(pAI.position.x + pAI.velocity.x * deltaTime, pAI.position.y + pAI.velocity.y * deltaTime);
-				// Position data
-				glm::vec2 v2PreviousPos(pAI.position.x, pAI.position.y);
-				glm::vec2 v2CurrentPos(ai.position.x, ai.position.y);
-				// Velocity data
-				glm::vec2 v2PreviousVel(pAI.velocity.x, pAI.velocity.y);
-				glm::vec2 v2CurrentVel(ai.velocity.x, ai.velocity.y);
+				glm::vec2 v2CurrentPos(ai.position.x, ai.position.y); // Current Position data
+				glm::vec2 v2CurrentVel(ai.velocity.x, ai.velocity.y); // Current Velocity data
 
-				glm::vec2 v2Heading(v2ExpectedPos - v2CurrentPos);
-				//glm::vec2 v2Heading(abs(v2ExpectedPos - v2CurrentPos));
-				GLfloat fDot = glm::dot(v2Heading, v2CurrentPos);
-
-				// if our current timestamp is before our previous time stamp, or
-				// our distance from our expected position is outside our range, and we haven't teleported
-				if (timeStamp < m_uiPrevTimeStamp ||
-					glm::distance(v2ExpectedPos, v2CurrentPos) > fRange && !ai.teleported) // && pAI.position.x < v2CurrentPos.x)
+				// if packet is out of order (based off the timestamp)...
+				if (m_uiCurrentTimeStamp < m_uiPrevTimeStamp)
 				{
-					//... set our current pos to our expected pos
-					//ai.position.x = fExpectedPosX;
-					//ai.position.y = fExpectedPosY;
-					std::cout << "Entity " << ai.id << " moved." << std::endl;
+					// ...use our previous data
+					ai = pAI;
+					isOutOfOrder = true;
+				}
+				// ... else if our distance from our expected position is outside our range, and we haven't teleported
+				else if (glm::distance(v2ExpectedPos, v2CurrentPos) > fRange && !ai.teleported)
+				{
+					//std::cout << "Entity " << ai.id << " moved." << std::endl;
 
 					/// <summary>
-					/// TODO: lerp from our previous position to our current position over time.
-					/// adjusts position and velocity to our current data.
+					/// lerp from our previous velocity to our current velocity over time.
 					/// <example> Lerp = fma(t, v1, fma(-t, v0, v0)) </example> 
-					/// </summary> //old//glm::mix(v2CurrentPos, v2ExpectedPos, deltaTime); //glfwGetTime());
-					glm::mix(v2PreviousPos, v2CurrentPos, deltaTime); //glfwGetTime());
-					glm::mix(v2PreviousVel, v2CurrentVel, deltaTime); // TODO: needed?
+					/// </summary> 
+					ai.velocity.x = glm::mix(pAI.velocity.x, v2CurrentVel.x, deltaTime);
+					ai.velocity.y = glm::mix(pAI.velocity.y, v2CurrentVel.y, deltaTime);
+				}
+			}
 
-					/*glm::mix(v2CurrentVel, v2ExpectedPos, deltaTime); //glfwGetTime());
-					//fmaf(glfwGetTime(), ai.position.x, fmaf(-glfwGetTime(), pAI.position.x, pAI.position.x));
-					//fmaf(glfwGetTime(), ai.position.y, fmaf(-glfwGetTime(), pAI.position.y, pAI.position.y));
-					//glm::mix(pAI.position.x, ai.position.x, deltaTime); //glfwGetTime()); //TODO: deltaTime?
-					//glm::mix(pAI.position.y, ai.position.y, deltaTime); //glfwGetTime()); */
-				}
-				// ... if new packet data is behind us
-				else if (v2ExpectedPos.x < v2Heading.x && v2ExpectedPos.y < v2Heading.y)
-				{
-					glm::mix(v2PreviousVel, v2CurrentVel, deltaTime); // TODO: needed?
-				}
-				// TODO: if packet is null
-				// continue at current velocity
+			// if our data is valid...
+			if (!isOutOfOrder)
+			{
+				// ...set current time stamp to the previous.
+				m_uiPrevTimeStamp = m_uiCurrentTimeStamp;
 			}
 
 			break;
@@ -268,18 +261,16 @@ bool AssessmentNetworkingApplication::update(GLfloat deltaTime)
 		}
 	}
 
-	// TODO:
 	// Predictive movement: predict movement without receiving packets.
 	// Dead Reckoning: adjusts the entites positions
 	for (GLuint i = 0; i < m_aiEntities.size(); ++i)
 	{
 		AIEntity& ai = m_aiEntities[i];
-		AIEntity& pAI = m_aiPrevEntities[i];
-		//glm::vec2 v2ExpectedPos(pAI.position.x + ai.velocity.x * deltaTime, pAI.position.y + ai.velocity.y * deltaTime);
-		glm::vec2 v2ExpectedPos(pAI.position.x + pAI.velocity.x * deltaTime, pAI.position.y + pAI.velocity.y * deltaTime);
-		glm::vec2 v2CurrentPos(ai.position.x, ai.position.y);
+		glm::vec2 v2ExpectedPos(ai.position.x + ai.velocity.x * deltaTime, ai.position.y + ai.velocity.y * deltaTime);
 
-		v2CurrentPos = v2ExpectedPos;
+		// set our position to where we expect to be
+		ai.position.x = v2ExpectedPos.x;
+		ai.position.y = v2ExpectedPos.y;
 	}
 
 	Gizmos::clear();
@@ -308,10 +299,13 @@ GLvoid AssessmentNetworkingApplication::draw()
 		vec3 p1 = vec3(ai.position.x + ai.velocity.x * 0.25f, 0, ai.position.y + ai.velocity.y * 0.25f);
 		vec3 p2 = vec3(ai.position.x, 0, ai.position.y) - glm::cross(vec3(ai.velocity.x, 0, ai.velocity.y), vec3(0, 1, 0)) * 0.1f;
 		vec3 p3 = vec3(ai.position.x, 0, ai.position.y) + glm::cross(vec3(ai.velocity.x, 0, ai.velocity.y), vec3(0, 1, 0)) * 0.1f;
+		// if the id is not equal to 1...
 		if (ai.id != 1)
 		{
+			// ... set the colour to red...
 			Gizmos::addTri(p1, p2, p3, glm::vec4(1, 0, 0, 1));
 		}
+		// ... else set the colour to pink
 		else
 		{
 			Gizmos::addTri(p1, p2, p3, glm::vec4(1, 0, 1, 1));
@@ -321,8 +315,3 @@ GLvoid AssessmentNetworkingApplication::draw()
 	// display the 3D gizmos
 	Gizmos::draw(m_camera->getProjectionView());
 }
-/*
-float lerp(float v0, float v1, float t) 
-{
-	return (1 - t)*v0 + t*v1;
-} //*/

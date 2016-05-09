@@ -1,15 +1,14 @@
 #pragma once
 
-#include "BaseApplication.h"
 #include "AIEntity.h"
+#include "BaseApplication.h"
+#include <RakNetTime.h>
 #include <vector>
 
 class Camera;
 
 namespace RakNet {
 	class RakPeerInterface;
-	//class MessageID; //TODO: 
-	//class Time;
 }
 
 class AssessmentNetworkingApplication : public BaseApplication {
@@ -34,10 +33,7 @@ private:
 	std::vector<AIEntity>		m_aiEntities;
 	std::vector<AIEntity>		m_aiPrevEntities; // way to store our entities from the previous frame.
 
-	uint64_t m_uiPrevTimeStamp;
 	// Used for timestamping
-//	RakNet::MessageID useTimeStamp; // Assign this to ID_TIMESTAMP
-//	RakNet::Time timeStamp; // Put the system time in here returned by RakNet::GetTime()
-// useTimeStamp = ID_TIMESTAMP; // MessageIdentifiers.h line: 139
-// timeStamp = RakNet::GetTime();
+	RakNet::Time m_uiPrevTimeStamp;
+	RakNet::Time m_uiCurrentTimeStamp;
 };

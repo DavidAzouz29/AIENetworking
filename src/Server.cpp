@@ -102,7 +102,7 @@ void Server::run() {
 	}
 }
 
-// TODO: able to add more data like the timestamp not remove contents
+// Add more data like the timestamp not remove contents
 // Stop setting/ sending ID_TIMESTAMP every packet?
 void Server::broadcastFaultyData(const char* data, unsigned int size) 
 {
@@ -121,7 +121,7 @@ void Server::broadcastFaultyData(const char* data, unsigned int size)
 		DelayedBroadcast* b = new DelayedBroadcast;
 		b->stream.Write((RakNet::MessageID)useTimeStamp);
 		b->stream.Write((RakNet::MessageID)GameMessages::ID_ENTITY_LIST);
-		b->stream.Write(timeStamp); //TODO: switch with ^above?
+		b->stream.Write(timeStamp); 
 		b->stream.Write(size);
 		b->stream.Write(data, size);
 		float delay = randf() * m_delayRange;
@@ -132,8 +132,8 @@ void Server::broadcastFaultyData(const char* data, unsigned int size)
 		// just send the stream
 		RakNet::BitStream stream;
 		stream.Write((RakNet::MessageID)useTimeStamp);
-		stream.Write(timeStamp);
 		stream.Write((RakNet::MessageID)GameMessages::ID_ENTITY_LIST);
+		stream.Write(timeStamp);
 		stream.Write(size);
 		stream.Write(data, size);
 		sendBitStream(&stream);
