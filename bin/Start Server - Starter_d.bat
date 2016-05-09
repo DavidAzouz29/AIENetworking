@@ -10,4 +10,4 @@ set /p delay=Set packet delay percentage (default - 10):
 set range=1
 set /p range=Set packet delay range (default - 1):
 
-ServerApplication.exe -count %count% -radius %radius% -loss %loss% -delay %delay% -range %range%
+ServerApplication_d.exe -count %count% -radius %radius% -loss %loss% -delay %delay% -range %range%

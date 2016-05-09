@@ -15,8 +15,7 @@
 /// Timestamping - David Azouz 8/05/2016
 /// Predictive Movement - David Azouz 9/05/2016
 /// 
-/// if packet is null
-/// continue at current velocity
+/// TODO: Teleport Client side
 /// </summary>
 /// ------------------------------------------------------------------
 
